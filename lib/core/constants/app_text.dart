@@ -16,6 +16,27 @@ class AppText {
   static const dataStaysOnDevice =
       'Your data never leaves your Telegram account.';
 
+  static const welcomeHeadline = 'TeleDrive';
+  static const welcomeSubtitlePart1 = 'Your ';
+  static const welcomeSubtitlePart2 = 'Telegram';
+  static const welcomeSubtitlePart3 = ', your ';
+  static const welcomeSubtitlePart4 = 'cloud';
+  static const welcomeSubtitlePart5 = '.';
+
+  static const featurePrivacyTitle = 'Absolute Privacy';
+  static const featurePrivacySubtitle = 'Zero trackers. Locked safely in your Telegram.';
+  
+  static const featureSpaceTitle = 'Infinite Space';
+  static const featureSpaceSubtitle = 'Never hit a limit, completely free of caps.';
+  
+  static const featureFastTitle = 'Blazing Fast';
+  static const featureFastSubtitle = 'Optimized transfers to save you time.';
+  
+  static const featureFoldersTitle = 'Smart Folders';
+  static const featureFoldersSubtitle = 'Easily sort and structure your digital life.';
+  
+  static const welcomeFooter = '100% private. Stored entirely on your Telegram.';
+
   // Feature pills
   static const pillPrivate = 'Private';
   static const pillUpload = 'Upload';
@@ -351,4 +372,46 @@ class AppText {
 
   // Upload progress card
   static const uploadingN = 'Uploading'; // append " N file(s)..."
+
+  // ---------------------------------------------------------------------------
+  // Auth & Platform Failures
+  // ---------------------------------------------------------------------------
+  static const registrationRequired = 'REGISTRATION_REQUIRED';
+  static const registrationRequiredMessage =
+      'An active Telegram account is required to proceed. Please create a Telegram account first.';
+  static const phoneNumberInvalidKey = 'PHONE_NUMBER_INVALID';
+  static const phoneNumberInvalidMessage = 'Invalid phone number format.';
+  static const phoneCodeInvalid = 'PHONE_CODE_INVALID';
+  static const phoneCodeInvalidMessage = 'The verification code is incorrect.';
+  static const phoneCodeExpired = 'PHONE_CODE_EXPIRED';
+  static const phoneCodeExpiredMessage = 'The code has expired. Please try again.';
+  static const passwordHashInvalid = 'PASSWORD_HASH_INVALID';
+  static const passwordHashInvalidMessage = 'Wrong password. Please try again.';
+  static const connectionTimedOut = 'Connection timed out. Check your internet.';
+
+  // ---------------------------------------------------------------------------
+  // Upload Limitations (Size & Count Constraints)
+  // ---------------------------------------------------------------------------
+  static const tooManySharedFilesTitle = 'Too Many Shared Files';
+  static const tooManySharedFilesContent =
+      'You can only import up to 10 shared files at a time to prevent overwhelming the client.';
+  static const tooManyFilesSelectedTitle = 'Too Many Files Selected';
+  static const tooManyFilesSelectedContent =
+      'You can only select and upload up to 10 files at a time to prevent overwhelming the client.';
+  static const fileSizeExceededTitle = 'File Size Exceeded';
+  static const fileExceedsTelegramLimit = 'File size exceeds the 2.0 GB Telegram limit.';
+  static const ok = 'OK';
+
+  static String sharedFileSizeExceededSingle(String filename) =>
+      'The shared file "$filename" exceeds the 2.0 GB Telegram size limit. Import blocked.';
+
+  static String sharedFileSizeExceededMultiple(String filenames) =>
+      'The following shared files exceed the 2.0 GB Telegram size limit and have been blocked: $filenames.';
+
+  static String fileSizeExceededSingle(String filename) =>
+      'The file "$filename" exceeds the 2.0 GB Telegram size limit. Upload blocked.';
+
+  static String fileSizeExceededMultiple(String filenames) =>
+      'The following files exceed the 2.0 GB Telegram size limit and have been blocked: $filenames.';
 }
+

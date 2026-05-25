@@ -95,55 +95,71 @@ class TelegramPlugin(private val context: Context) :
             }
 
             "sendPhoneNumber" -> {
-                val phone = call.argument<String>("phone")?.trim() ?: ""
+                try {
+                    val phone = call.argument<String>("phone")?.trim() ?: ""
 
-                if (phone.isBlank()) {
-                    result.error(
-                        "INVALID_PHONE",
-                        "Phone number is empty.",
-                        null
-                    )
-                    return
+                    if (phone.isBlank()) {
+                        result.error(
+                            "INVALID_PHONE",
+                            "Phone number is empty.",
+                            null
+                        )
+                        return
+                    }
+
+                    manager.sendPhoneNumber(phone)
+                    result.success(null)
+                } catch (e: Exception) {
+                    result.error("EXCEPTION", e.message ?: "Error sending phone number", null)
                 }
-
-                manager.sendPhoneNumber(phone)
-                result.success(null)
             }
 
             "checkCode" -> {
-                val code = call.argument<String>("code")?.trim() ?: ""
+                try {
+                    val code = call.argument<String>("code")?.trim() ?: ""
 
-                if (code.isBlank()) {
-                    result.error(
-                        "INVALID_CODE",
-                        "Login code is empty.",
-                        null
-                    )
-                    return
+                    if (code.isBlank()) {
+                        result.error(
+                            "INVALID_CODE",
+                            "Login code is empty.",
+                            null
+                        )
+                        return
+                    }
+
+                    manager.checkCode(code)
+                    result.success(null)
+                } catch (e: Exception) {
+                    result.error("EXCEPTION", e.message ?: "Error checking code", null)
                 }
-
-                manager.checkCode(code)
-                result.success(null)
             }
 
             "checkPassword" -> {
-                val password = call.argument<String>("password") ?: ""
+                try {
+                    val password = call.argument<String>("password") ?: ""
 
-                if (password.isBlank()) {
-                    result.error(
-                        "INVALID_PASSWORD",
-                        "Password is empty.",
-                        null
-                    )
-                    return
+                    if (password.isBlank()) {
+                        result.error(
+                            "INVALID_PASSWORD",
+                            "Password is empty.",
+                            null
+                        )
+                        return
+                    }
+
+                    manager.checkPassword(password)
+                    result.success(null)
+                } catch (e: Exception) {
+                    result.error("EXCEPTION", e.message ?: "Error checking password", null)
                 }
-
-                manager.checkPassword(password)
-                result.success(null)
             }
             "logout" -> {
-                manager.logout()
-                result.success(null)
+                try {
+                    manager.logout()
+                    result.success(null)
+                } catch (e: Exception) {
+                    result.error("EXCEPTION", e.message ?: "Error logging out", null)
+                }
             }
             "getMe" -> {
                 manager.getMe(

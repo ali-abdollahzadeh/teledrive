@@ -267,6 +267,18 @@ class AppColors {
   // Gradients
   // ---------------------------------------------------------------------------
 
+  /// The custom washed-out blue gradient for white mode backgrounds
+  static const LinearGradient washedBlueBackground = LinearGradient(
+    begin: Alignment.topRight,
+    end: Alignment.bottomLeft,
+    stops: [0.0, 0.494, 0.978],
+    colors: [
+      Color(0x00FFFFFF), // Transparent white (0% opacity)
+      Color(0x4D00A6FA), // #00A6FA at 30% opacity
+      Color(0x00FFFFFF), // Transparent white (0% opacity)
+    ],
+  );
+
   static const LinearGradient primaryGradient = LinearGradient(
     colors: [
       teledriveBlue,
@@ -341,6 +353,30 @@ class AppColors {
     end: Alignment.bottomRight,
   );
 
+  /// Dark Mode: The diagonal teal sweep (Layer 2)
+  static const LinearGradient darkTealSweep = LinearGradient(
+    begin: Alignment.topRight,
+    end: Alignment.bottomLeft,
+    stops: [0.0, 0.15, 0.5, 0.85, 1.0],
+    colors: [
+      Color(0x00167491), // 0% opacity teal (Transparent)
+      Color(0x33167491), // 20% opacity teal - intermediate stop for smoothing
+      Color(
+          0x80167491), // 50% opacity teal - reduced from 100% to prevent harsh banding
+      Color(0x33167491), // 20% opacity teal - intermediate stop for smoothing
+      Color(0x00167491), // 0% opacity teal (Transparent)
+    ],
+  );
+
+  /// Dark Mode: The vertical shadow overlay (Layer 3)
+  static const LinearGradient darkVerticalOverlay = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Color(0xFF1C2229), // 100% solid #1C2229 at the top
+      Color(0x80242424), // 50% opacity #242424 at the bottom (0x80 = 50%)
+    ],
+  );
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -363,10 +399,11 @@ class AppColors {
         return fileOther;
     }
   }
+
   // ---------------------------------------------------------------------------
-// teledrive Glass Tab colors
-// Source: ThemeColors.java
-// ---------------------------------------------------------------------------
+  // teledrive Glass Tab colors
+  // Source: ThemeColors.java
+  // ---------------------------------------------------------------------------
 
   static const Color glassDefaultIcon = Color(0x991B2227);
   static const Color glassDefaultText = Color(0x991B2227);

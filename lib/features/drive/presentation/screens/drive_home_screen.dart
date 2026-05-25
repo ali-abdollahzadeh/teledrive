@@ -1,13 +1,20 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart'; // <-- Brought back for the background
 import 'package:go_router/go_router.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:share_plus/share_plus.dart';
-import 'dart:io';
+
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/constants/app_text.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/routing/app_router.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/common_widgets.dart';
 import '../../domain/entities/drive_file.dart';
 import '../providers/drive_provider.dart';
@@ -15,7 +22,7 @@ import '../widgets/file_grid_item.dart';
 import '../widgets/file_list_item.dart';
 import '../widgets/storage_selector.dart';
 import '../widgets/upload_progress_card.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import '../widgets/add_folder_dialog.dart';
 
 class DriveHomeScreen extends ConsumerStatefulWidget {
   const DriveHomeScreen({super.key});
@@ -26,23 +33,138 @@ class DriveHomeScreen extends ConsumerStatefulWidget {
 
 class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
   final _searchCtrl = TextEditingController();
+  StreamSubscription? _intentSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initShareIntent();
+  }
+
+  void _initShareIntent() {
+    _intentSubscription = ReceiveSharingIntent.instance.getMediaStream().listen(
+      (List<SharedMediaFile> value) {
+        if (value.isNotEmpty) _handleSharedFiles(value);
+      },
+      onError: (err) => debugPrint("getIntentDataStream error: $err"),
+    );
+
+    // Defer initial-media handling until after the first frame is rendered.
+    // This ensures the widget is fully mounted and the background TDLib session
+    // restore (triggered by the router) has had a chance to start before we
+    // try to load folders or show the bottom sheet.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ReceiveSharingIntent.instance
+          .getInitialMedia()
+          .then((List<SharedMediaFile> value) {
+        if (value.isNotEmpty) _handleSharedFiles(value);
+        ReceiveSharingIntent.instance.reset();
+      });
+    });
+  }
 
   @override
   void dispose() {
+    _intentSubscription?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
 
+  // ==========================================
+  // BACKGROUND BUILDER
+  // ==========================================
+  Widget _buildBackground(bool isDark) {
+    return Positioned.fill(
+      child: isDark
+          ? SvgPicture.asset(
+              'assets/images/bg_dark.svg',
+              fit: BoxFit.cover,
+            )
+          : Container(
+              decoration: const BoxDecoration(
+                gradient: AppColors.washedBlueBackground,
+              ),
+            ),
+    );
+  }
+
+  // ==========================================
+  // UPLOAD & SHARE LOGIC
+  // ==========================================
+
+  Future<void> _handleSharedFiles(List<SharedMediaFile> sharedFiles) async {
+    if (!mounted) return;
+
+    if (sharedFiles.length > AppConstants.maxUploadBatchCount) {
+      _showTooManyFilesDialog();
+      return;
+    }
+
+    final List<String> tooLargeFileNames = [];
+    final List<SharedMediaFile> validFiles = [];
+
+    for (final file in sharedFiles) {
+      int size = 0;
+      final path = file.path;
+      try {
+        if (!path.startsWith('content://')) {
+          final f = File(path);
+          if (f.existsSync()) size = f.lengthSync();
+        }
+      } catch (e) {
+        debugPrint("Error reading shared file size: $e");
+      }
+
+      if (size > AppConstants.maxUploadSizeBytes) {
+        tooLargeFileNames.add(p.basename(path));
+      } else {
+        validFiles.add(file);
+      }
+    }
+
+    if (!mounted) return;
+
+    if (tooLargeFileNames.isNotEmpty) {
+      _showFilesTooLargeDialog(tooLargeFileNames);
+      return;
+    }
+
+    if (validFiles.isEmpty) return;
+
+    // Navigate straight to the share screen — it handles folder loading itself.
+    // Kick off a background folder load so the share screen has data sooner.
+    final driveState = ref.read(driveProvider);
+    if (driveState.folders.isEmpty && !driveState.isLoadingFolders) {
+      ref.read(driveProvider.notifier).loadFolders();
+    }
+
+    context.push(AppRoutes.shareToDrive, extra: validFiles);
+  }
+
+
+
   Future<void> _pickAndUpload() async {
     final result = await FilePicker.platform.pickFiles(allowMultiple: true);
     if (result == null || result.files.isEmpty) return;
-
     if (!mounted) return;
+
+    if (result.files.length > AppConstants.maxUploadBatchCount) {
+      _showTooManyFilesDialog();
+      return;
+    }
+
+    final tooLargeFiles = result.files
+        .where((f) => f.size > AppConstants.maxUploadSizeBytes)
+        .toList();
+    if (tooLargeFiles.isNotEmpty) {
+      final fileNames = tooLargeFiles.map((f) => f.name).toList();
+      _showFilesTooLargeDialog(fileNames);
+      return;
+    }
 
     final driveState = ref.read(driveProvider);
     final currentFolderId = driveState.currentFolderId;
 
-    // If user is already in a specific folder, upload directly without asking
     if (currentFolderId != 'saved_messages') {
       for (final file in result.files) {
         if (file.path != null) {
@@ -61,9 +183,12 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
       return;
     }
 
-    // On the home/Saved Messages view, ask which folder to upload to
     _showUploadDestinationSheet(result.files, driveState);
   }
+
+  // ==========================================
+  // FILE OPERATIONS
+  // ==========================================
 
   Future<void> _downloadFile(DriveFile file) async {
     try {
@@ -97,82 +222,12 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
         .share(ShareParams(files: [XFile(path)], text: file.name));
   }
 
-  void _showUploadDestinationSheet(
-      List<PlatformFile> files, DriveState driveState) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.xs,
-          AppSpacing.xl,
-          AppSpacing.xxl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AppSpacing.gapXS,
-            Text('Upload ${files.length} file(s) to...',
-                style: Theme.of(ctx).textTheme.titleMedium),
-            AppSpacing.gapMD,
-            ...driveState.folders.map((folder) => ListTile(
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: SvgPicture.asset(
-                      folder.isSavedMessages
-                          ? 'assets/icons/ic_av_savedmessages.svg'
-                          : 'assets/icons/folder_filled.svg',
-                      colorFilter: const ColorFilter.mode(
-                        AppColors.primary,
-                        BlendMode.srcIn,
-                      ),
-                      width: 20,
-                      height: 20,
-                    ),
-                  ),
-                  title: Text(folder.title),
-                  subtitle:
-                      Text('${folder.fileCount} ${AppText.fileCountSuffix}'),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    for (final file in files) {
-                      if (file.path != null) {
-                        ref.read(uploadProvider.notifier).uploadFile(
-                              localPath: file.path!,
-                              fileName: file.name,
-                              folderId: folder.id,
-                            );
-                      }
-                    }
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text(
-                              '${AppText.uploadingN} ${files.length} ${AppText.uploadingFilesSuffix}')),
-                    );
-                  },
-                )),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _deleteFiles(List<DriveFile> files) {
     if (files.isEmpty) return;
 
     final notifier = ref.read(driveProvider.notifier);
     bool undone = false;
 
-    // Instantly remove from UI — no waiting
     notifier.hideFilesPendingDeletion(files);
     ScaffoldMessenger.of(context).clearSnackBars();
 
@@ -195,7 +250,6 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
       ),
     );
 
-    // After 5 seconds, if not undone, confirm deletion and dismiss the snackbar
     Future.delayed(const Duration(seconds: 5), () {
       if (!undone && mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -221,61 +275,147 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
     }
   }
 
-  void _showCreateFolderDialog() {
-    final ctrl = TextEditingController();
+  void _openFile(DriveFile file) {
+    switch (file.type) {
+      case DriveFileType.image:
+        context.push('/preview/image/${file.id}');
+      case DriveFileType.video:
+        context.push('/preview/video/${file.id}');
+      case DriveFileType.audio:
+        context.push('/preview/audio/${file.id}');
+      case DriveFileType.pdf:
+        context.push('/preview/pdf/${file.id}');
+      default:
+        context.push('/file/${file.id}');
+    }
+  }
 
+  // ==========================================
+  // DIALOGS & SHEETS
+  // ==========================================
+
+  void _showTooManyFilesDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(AppText.createFolder),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              AppText.createFolderTelegramNote,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.4,
-              ),
-            ),
-            AppSpacing.gapMD,
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: AppText.folderNameHint,
-                prefixIcon: Icon(Icons.folder_rounded),
-              ),
-            ),
-          ],
-        ),
+        title: const Text(AppText.tooManyFilesSelectedTitle),
+        content: const Text(AppText.tooManyFilesSelectedContent),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text(AppText.cancel),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              if (ctrl.text.trim().isNotEmpty) {
-                ref.read(driveProvider.notifier).createFolder(ctrl.text.trim());
-              }
-            },
-            style: ElevatedButton.styleFrom(minimumSize: const Size(100, 44)),
-            child: const Text(AppText.create),
+            child: const Text(AppText.ok),
           ),
         ],
       ),
     );
   }
 
+  void _showFilesTooLargeDialog(List<String> fileNames) {
+    final fileNamesStr = fileNames.join(', ');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(AppText.fileSizeExceededTitle),
+        content: Text(
+          fileNames.length == 1
+              ? AppText.fileSizeExceededSingle(fileNamesStr)
+              : AppText.fileSizeExceededMultiple(fileNamesStr),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(AppText.ok),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateFolderDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => const AddFolderDialog(),
+    );
+  }
+
+  void _showUploadDestinationSheet(
+      List<PlatformFile> files, DriveState driveState) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl, AppSpacing.xs, AppSpacing.xl, AppSpacing.xxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppSpacing.gapXS,
+            Text('Upload ${files.length} file(s) to...',
+                style: Theme.of(ctx).textTheme.titleMedium),
+            AppSpacing.gapMD,
+            ...driveState.folders.map((folder) => _buildFolderListTile(
+                  folder: folder,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    for (final file in files) {
+                      if (file.path != null) {
+                        ref.read(uploadProvider.notifier).uploadFile(
+                              localPath: file.path!,
+                              fileName: file.name,
+                              folderId: folder.id,
+                            );
+                      }
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text(
+                              '${AppText.uploadingN} ${files.length} ${AppText.uploadingFilesSuffix}')),
+                    );
+                  },
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+
+  Widget _buildFolderListTile(
+      {required dynamic folder, required VoidCallback onTap}) {
+    return ListTile(
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(
+          folder.isSavedMessages
+              ? Icons.bookmark_rounded
+              : Icons.folder_rounded,
+          color: AppColors.primary,
+          size: 22,
+        ),
+      ),
+      title: Text(folder.title),
+      subtitle: Text('${folder.fileCount} ${AppText.fileCountSuffix}'),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onTap: onTap,
+    );
+  }
+
+  // ==========================================
+  // BUILD METHOD
+  // ==========================================
+
   @override
   Widget build(BuildContext context) {
     final driveState = ref.watch(driveProvider);
     final uploadState = ref.watch(uploadProvider);
     final files = driveState.filteredFiles;
-
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     ref.listen<DriveState>(driveProvider, (previous, next) {
@@ -290,53 +430,59 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
     });
 
     return Scaffold(
-      backgroundColor: isDark ? Colors.black : const Color(0xFFF2F2F7),
-      body: RefreshIndicator(
-        onRefresh: () => ref.read(driveProvider.notifier).loadAll(),
-        color: AppColors.primary,
-        backgroundColor: isDark ? AppColors.cardDark : Colors.white,
-        child: CustomScrollView(
-          slivers: [
-            _buildSliverAppBar(driveState, isDark),
-            SliverToBoxAdapter(
-                child: StorageSelector(
-              folders: driveState.folders,
-              selectedId: driveState.currentFolderId,
-              onSelected: (id) =>
-                  ref.read(driveProvider.notifier).switchFolder(id),
-            )),
-            if (uploadState.hasActiveTasks)
-              SliverToBoxAdapter(
-                  child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.xs,
-                  AppSpacing.md,
-                  0,
+      backgroundColor: isDark ? Colors.black : Colors.white,
+      body: Stack(
+        children: [
+          // 1. The custom background
+          _buildBackground(isDark),
+
+          // 2. The scrollable content
+          RefreshIndicator(
+            onRefresh: () => ref.read(driveProvider.notifier).loadAll(),
+            color: AppColors.primary,
+            backgroundColor: isDark ? AppColors.cardDark : Colors.white,
+            child: CustomScrollView(
+              slivers: [
+                _buildSliverAppBar(driveState, isDark),
+                SliverToBoxAdapter(
+                  child: StorageSelector(
+                    folders: driveState.folders,
+                    selectedId: driveState.currentFolderId,
+                    onSelected: (id) =>
+                        ref.read(driveProvider.notifier).switchFolder(id),
+                  ),
                 ),
-                child: UploadProgressCard(tasks: uploadState.tasks),
-              )),
-            _buildFilterBar(driveState),
-            if (driveState.isLoadingFiles)
-              const SliverFillRemaining(
-                  child: LoadingView(message: AppText.loadingFiles))
-            else if (files.isEmpty)
-              SliverFillRemaining(
-                child: EmptyState(
-                  icon: Icons.cloud_upload_outlined,
-                  title: AppText.noFilesYet,
-                  subtitle: AppText.uploadFirstFile,
-                  actionLabel: AppText.upload,
-                  onAction: _pickAndUpload,
-                ),
-              )
-            else if (driveState.viewMode == ViewMode.grid)
-              _buildGridView(files, driveState)
-            else
-              _buildListView(files, driveState),
-            const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
-          ],
-        ),
+                if (uploadState.hasActiveTasks)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md, AppSpacing.xs, AppSpacing.md, 0),
+                      child: UploadProgressCard(tasks: uploadState.tasks),
+                    ),
+                  ),
+                _buildFilterBar(driveState),
+                if (driveState.isLoadingFiles)
+                  const SliverFillRemaining(
+                      child: LoadingView(message: AppText.loadingFiles))
+                else if (files.isEmpty)
+                  SliverFillRemaining(
+                    child: EmptyState(
+                      icon: Icons.cloud_upload_outlined,
+                      title: AppText.noFilesYet,
+                      subtitle: AppText.uploadFirstFile,
+                      actionLabel: AppText.upload,
+                      onAction: _pickAndUpload,
+                    ),
+                  )
+                else if (driveState.viewMode == ViewMode.grid)
+                  _buildGridView(files, driveState)
+                else
+                  _buildListView(files, driveState),
+                const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+              ],
+            ),
+          ),
+        ],
       ),
       floatingActionButton: driveState.isSelectionMode
           ? null
@@ -387,7 +533,8 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
       floating: true,
       snap: true,
       elevation: 0,
-      backgroundColor: isDark ? Colors.black : const Color(0xFFF2F2F7),
+      backgroundColor: Colors
+          .transparent, // Made transparent to let the SVG/Gradient shine through
       surfaceTintColor: Colors.transparent,
       title: Text(
         AppText.appTitle,
@@ -441,13 +588,13 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
     };
 
     final icons = {
-      DriveFileType.image: 'assets/icons/gallery_filled.svg',
-      DriveFileType.video: 'assets/icons/video_filled.svg',
-      DriveFileType.audio: 'assets/icons/music.svg',
-      DriveFileType.pdf: 'assets/icons/file_filled.svg',
-      DriveFileType.document: 'assets/icons/edit.svg',
-      DriveFileType.archive: 'assets/icons/badgefolder.svg',
-      DriveFileType.other: 'assets/icons/ic_voicesharing.svg',
+      DriveFileType.image: Icons.image_rounded,
+      DriveFileType.video: Icons.movie_rounded,
+      DriveFileType.audio: Icons.audiotrack_rounded,
+      DriveFileType.pdf: Icons.picture_as_pdf_rounded,
+      DriveFileType.document: Icons.description_rounded,
+      DriveFileType.archive: Icons.folder_zip_rounded,
+      DriveFileType.other: Icons.insert_drive_file_rounded,
     };
 
     return SliverToBoxAdapter(
@@ -464,45 +611,43 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
                     final isSelected = driveState.filterType == type;
 
                     return Padding(
-                        padding: const EdgeInsets.only(right: AppSpacing.xs),
-                        child: FilterChip(
-                          showCheckmark: false,
-                          avatar: Container(
-                            width: 18,
-                            height: 18,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            alignment: Alignment.center,
-                            child: isSelected
-                                ? const Icon(
-                                    Icons.check_rounded,
-                                    size: 14,
-                                    color: AppColors.primary,
-                                  )
-                                : SvgPicture.asset(
-                                    icons[type] ?? 'assets/icons/d.svg',
-                                    width: 14,
-                                    height: 14,
-                                  ),
+                      padding: const EdgeInsets.only(right: AppSpacing.xs),
+                      child: FilterChip(
+                        showCheckmark: false,
+                        avatar: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
                           ),
-                          label: Text(
-                            labels[type] ?? AppText.filterOther,
-                            style: TextStyle(
-                              color:
-                                  isSelected ? Colors.white : AppColors.primary,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                            ),
+                          alignment: Alignment.center,
+                          child: isSelected
+                              ? const Icon(Icons.check_rounded,
+                                  size: 14, color: AppColors.primary)
+                              : Icon(
+                                  icons[type] ??
+                                      Icons.insert_drive_file_rounded,
+                                  size: 14,
+                                  color: AppColors.primary,
+                                ),
+                        ),
+                        label: Text(
+                          labels[type] ?? AppText.filterOther,
+                          style: TextStyle(
+                            color:
+                                isSelected ? Colors.white : AppColors.primary,
+                            fontWeight:
+                                isSelected ? FontWeight.w600 : FontWeight.w400,
                           ),
-                          selected: isSelected,
-                          onSelected: (_) =>
-                              ref.read(driveProvider.notifier).setFilter(type),
-                          backgroundColor: Colors.white,
-                          selectedColor: AppColors.primary,
-                        ));
+                        ),
+                        selected: isSelected,
+                        onSelected: (_) =>
+                            ref.read(driveProvider.notifier).setFilter(type),
+                        backgroundColor: Colors.white,
+                        selectedColor: AppColors.primary,
+                      ),
+                    );
                   }).toList(),
                 ),
               ),
@@ -560,21 +705,6 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
         childCount: files.length,
       ),
     );
-  }
-
-  void _openFile(DriveFile file) {
-    switch (file.type) {
-      case DriveFileType.image:
-        context.push('/preview/image/${file.id}');
-      case DriveFileType.video:
-        context.push('/preview/video/${file.id}');
-      case DriveFileType.audio:
-        context.push('/preview/audio/${file.id}');
-      case DriveFileType.pdf:
-        context.push('/preview/pdf/${file.id}');
-      default:
-        context.push('/file/${file.id}');
-    }
   }
 }
 

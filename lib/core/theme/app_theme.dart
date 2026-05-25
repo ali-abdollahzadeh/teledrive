@@ -44,7 +44,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
         shadowColor: Colors.transparent,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.roboto(
+        titleTextStyle: GoogleFonts.poppins(
           fontSize: 19,
           fontWeight: FontWeight.w500,
           color: textPrimary,
@@ -82,7 +82,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
-          textStyle: GoogleFonts.roboto(
+          textStyle: GoogleFonts.poppins(
             fontSize: 15,
             fontWeight: FontWeight.w500,
           ),
@@ -95,7 +95,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.teledriveBlue,
-          textStyle: GoogleFonts.roboto(
+          textStyle: GoogleFonts.poppins(
             fontSize: 15,
             fontWeight: FontWeight.w500,
           ),
@@ -123,7 +123,7 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.cardDarkAlt,
         selectedColor: AppColors.teledriveBlue.withValues(alpha: 0.22),
-        labelStyle: GoogleFonts.roboto(
+        labelStyle: GoogleFonts.poppins(
           fontSize: 13,
           color: textSecondary,
         ),
@@ -138,7 +138,7 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.cardDarkAlt,
-        contentTextStyle: GoogleFonts.roboto(
+        contentTextStyle: GoogleFonts.poppins(
           color: textPrimary,
           fontSize: 14,
         ),
@@ -230,7 +230,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
         shadowColor: Colors.transparent,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.roboto(
+        titleTextStyle: GoogleFonts.poppins(
           fontSize: 19,
           fontWeight: FontWeight.w500,
           color: AppColors.actionBarDefaultTitle,
@@ -268,7 +268,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
-          textStyle: GoogleFonts.roboto(
+          textStyle: GoogleFonts.poppins(
             fontSize: 15,
             fontWeight: FontWeight.w500,
           ),
@@ -281,7 +281,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.teledriveBlueText,
-          textStyle: GoogleFonts.roboto(
+          textStyle: GoogleFonts.poppins(
             fontSize: 15,
             fontWeight: FontWeight.w500,
           ),
@@ -309,7 +309,7 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.lightSurface,
         selectedColor: AppColors.teledriveBlue.withValues(alpha: 0.18),
-        labelStyle: GoogleFonts.roboto(
+        labelStyle: GoogleFonts.poppins(
           fontSize: 13,
           color: textSecondary,
         ),
@@ -324,7 +324,7 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: const Color(0xFF323232),
-        contentTextStyle: GoogleFonts.roboto(
+        contentTextStyle: GoogleFonts.poppins(
           color: Colors.white,
           fontSize: 14,
         ),
@@ -349,77 +349,77 @@ class AppTheme {
 
   static TextTheme _buildTextTheme(Color primary, Color secondary) {
     return TextTheme(
-      displayLarge: GoogleFonts.roboto(
+      displayLarge: GoogleFonts.poppins(
         fontSize: 57,
         fontWeight: FontWeight.w400,
         color: primary,
       ),
-      displayMedium: GoogleFonts.roboto(
+      displayMedium: GoogleFonts.poppins(
         fontSize: 45,
         fontWeight: FontWeight.w400,
         color: primary,
       ),
-      displaySmall: GoogleFonts.roboto(
+      displaySmall: GoogleFonts.poppins(
         fontSize: 36,
         fontWeight: FontWeight.w400,
         color: primary,
       ),
-      headlineLarge: GoogleFonts.roboto(
+      headlineLarge: GoogleFonts.poppins(
         fontSize: 32,
         fontWeight: FontWeight.w500,
         color: primary,
       ),
-      headlineMedium: GoogleFonts.roboto(
+      headlineMedium: GoogleFonts.poppins(
         fontSize: 28,
         fontWeight: FontWeight.w500,
         color: primary,
       ),
-      headlineSmall: GoogleFonts.roboto(
+      headlineSmall: GoogleFonts.poppins(
         fontSize: 24,
         fontWeight: FontWeight.w500,
         color: primary,
       ),
-      titleLarge: GoogleFonts.roboto(
+      titleLarge: GoogleFonts.poppins(
         fontSize: 20,
         fontWeight: FontWeight.w500,
         color: primary,
       ),
-      titleMedium: GoogleFonts.roboto(
+      titleMedium: GoogleFonts.poppins(
         fontSize: 16,
         fontWeight: FontWeight.w500,
         color: primary,
       ),
-      titleSmall: GoogleFonts.roboto(
+      titleSmall: GoogleFonts.poppins(
         fontSize: 14,
         fontWeight: FontWeight.w500,
         color: primary,
       ),
-      bodyLarge: GoogleFonts.roboto(
+      bodyLarge: GoogleFonts.poppins(
         fontSize: 16,
         fontWeight: FontWeight.w400,
         color: primary,
       ),
-      bodyMedium: GoogleFonts.roboto(
+      bodyMedium: GoogleFonts.poppins(
         fontSize: 15,
         fontWeight: FontWeight.w400,
         color: secondary,
       ),
-      bodySmall: GoogleFonts.roboto(
+      bodySmall: GoogleFonts.poppins(
         fontSize: 13,
         fontWeight: FontWeight.w400,
         color: secondary,
       ),
-      labelLarge: GoogleFonts.roboto(
+      labelLarge: GoogleFonts.poppins(
         fontSize: 14,
         fontWeight: FontWeight.w500,
         color: primary,
       ),
-      labelMedium: GoogleFonts.roboto(
+      labelMedium: GoogleFonts.poppins(
         fontSize: 12,
         fontWeight: FontWeight.w500,
         color: secondary,
       ),
-      labelSmall: GoogleFonts.roboto(
+      labelSmall: GoogleFonts.poppins(
         fontSize: 11,
         fontWeight: FontWeight.w500,
         color: secondary,
@@ -467,15 +467,15 @@ class AppTheme {
         ),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      hintStyle: GoogleFonts.roboto(
+      hintStyle: GoogleFonts.poppins(
         color: hintColor,
         fontSize: 15,
       ),
-      labelStyle: GoogleFonts.roboto(
+      labelStyle: GoogleFonts.poppins(
         color: hintColor,
         fontSize: 15,
       ),
-      floatingLabelStyle: GoogleFonts.roboto(
+      floatingLabelStyle: GoogleFonts.poppins(
         color: AppColors.teledriveBlueText,
         fontSize: 15,
         fontWeight: FontWeight.w500,
@@ -493,7 +493,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
         ),
-        textStyle: GoogleFonts.roboto(
+        textStyle: GoogleFonts.poppins(
           fontSize: 15,
           fontWeight: FontWeight.w500,
         ),
@@ -514,7 +514,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
         ),
-        textStyle: GoogleFonts.roboto(
+        textStyle: GoogleFonts.poppins(
           fontSize: 15,
           fontWeight: FontWeight.w500,
         ),

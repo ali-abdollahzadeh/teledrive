@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/entities/drive_file.dart';
 import '../../domain/entities/drive_folder.dart';
@@ -188,6 +189,8 @@ class DriveRepositoryImpl implements DriveRepository {
       ),
     );
 
+    final seenIds = <String>{myId.toString(), savedMessagesId};
+
     for (final chat in chats) {
       final chatId = (chat['id'] as num).toInt();
       final title = chat['title'] as String? ?? 'Untitled';
@@ -196,16 +199,45 @@ class DriveRepositoryImpl implements DriveRepository {
       if (chatId == myId) continue;
 
       if (type == 'channel' || type == 'supergroup') {
+        final idStr = chatId.toString();
+        seenIds.add(idStr);
         folders.add(
           DriveFolder(
-            id: chatId.toString(),
+            id: idStr,
             title: title,
-            telegramChannelId: chatId.toString(),
+            telegramChannelId: idStr,
             createdAt: DateTime.now(),
             fileCount: 0,
           ),
         );
       }
+    }
+
+    // Load custom linked/imported channels from SharedPreferences
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final imported = prefs.getStringList('imported_folders') ?? [];
+      for (final entry in imported) {
+        final parts = entry.split(':');
+        if (parts.length >= 2) {
+          final chatId = parts[0];
+          final title = parts.sublist(1).join(':');
+          if (!seenIds.contains(chatId)) {
+            seenIds.add(chatId);
+            folders.add(
+              DriveFolder(
+                id: chatId,
+                title: title,
+                telegramChannelId: chatId,
+                createdAt: DateTime.now(),
+                fileCount: 0,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      // SharedPreferences load failed, log or silently ignore
     }
 
     return folders;

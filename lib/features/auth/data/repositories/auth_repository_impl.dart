@@ -42,25 +42,31 @@ class AuthRepositoryImpl implements AuthRepository {
       throw ArgumentError('Phone number cannot be empty.');
     }
 
-    // Store only the phone number locally if your UI needs it.
-    // Do not store api_id or api_hash in Flutter anymore.
     await _storage.write(StorageKeys.phone, cleanPhone);
 
-    // Start listening to TDLib auth state stream.
+    // Start listening BEFORE initialize() so we never miss the first event.
+    // TDLib fires authorizationStateWaitPhoneNumber very quickly after init,
+    // and a broadcast stream does not replay past events — so the listener
+    // must already be attached when the event arrives.
     _subscribeToAuthStream();
 
-    // Initialize TDLib.
-    // Native Android side reads api_id/api_hash from BuildConfig.
+    // Arm the future BEFORE calling initialize(), same reason as above.
+    final waitForPhone = _waitForState(
+      'authorizationStateWaitPhoneNumber',
+      timeout: 30,
+    );
+
+    // Initialize TDLib (native side reads api_id/api_hash from BuildConfig).
     await NativeTelegramChannel.initialize();
 
-    // Wait for TDLib to be ready for the phone number.
-    await _waitForState('authorizationStateWaitPhoneNumber', timeout: 10);
+    // Now await the already-armed future.
+    await waitForPhone;
 
-    // Send the phone number. Telegram will send the login code.
+    // Send the phone number — Telegram will deliver the login code.
     await NativeTelegramChannel.sendPhoneNumber(cleanPhone);
 
-    // Wait for confirmation that code is needed.
-    await _waitForState('authorizationStateWaitCode', timeout: 15);
+    // Wait for TDLib to confirm the code was sent.
+    await _waitForState('authorizationStateWaitCode', timeout: 25);
   }
 
   @override
@@ -76,7 +82,7 @@ class AuthRepositoryImpl implements AuthRepository {
     final state = await _waitForAnyOf([
       'authorizationStateReady',
       'authorizationStateWaitPassword',
-    ], timeout: 15);
+    ], timeout: 25);
 
     if (state == 'authorizationStateReady') {
       await _onAuthenticated();
@@ -97,7 +103,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
     final state = await _waitForState(
       'authorizationStateReady',
-      timeout: 15,
+      timeout: 25,
     );
 
     if (state == 'authorizationStateReady') {
@@ -122,19 +128,23 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<bool> restoreSession() async {
+    // Subscribe first, then arm future, then initialize — same ordering fix
+    // as sendCode() to avoid missing the very first TDLib auth state event.
     _subscribeToAuthStream();
+
+    final waitForState = _waitForAnyOf([
+      'authorizationStateReady',
+      'authorizationStateWaitPhoneNumber',
+      'authorizationStateWaitCode',
+      'authorizationStateWaitPassword',
+    ], timeout: 20);
 
     // Initialize TDLib using native BuildConfig credentials.
     // If a valid TDLib session exists on disk, TDLib should move to Ready.
     await NativeTelegramChannel.initialize();
 
     try {
-      final state = await _waitForAnyOf([
-        'authorizationStateReady',
-        'authorizationStateWaitPhoneNumber',
-        'authorizationStateWaitCode',
-        'authorizationStateWaitPassword',
-      ], timeout: 10);
+      final state = await waitForState;
 
       final isReady = state == 'authorizationStateReady';
 

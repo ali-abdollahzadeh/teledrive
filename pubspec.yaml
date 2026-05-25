@@ -1,7 +1,7 @@
 name: tele_drive
 description: Use TeleDrive as your private cloud drive.
 publish_to: 'none'
-version: 1.0.0+10
+version: 1.1.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -24,6 +24,8 @@ dependencies:
   file_picker: ^8.0.7
   path_provider: ^2.1.3
   path: ^1.9.0
+
+  #file sharing
 
   # Permissions
   permission_handler: ^11.3.1
@@ -56,6 +58,7 @@ dependencies:
   # Icons
   cupertino_icons: ^1.0.8
   flutter_svg: ^2.0.10+1
+  material_symbols_icons: ^4.2928.1
 
   # Utility
   intl: ^0.19.0
@@ -65,6 +68,7 @@ dependencies:
   url_launcher: ^6.3.0
   package_info_plus: ^8.0.0
   local_auth: ^3.0.1
+  receive_sharing_intent: ^1.8.1
 
 dev_dependencies:
   flutter_test:
@@ -88,15 +92,3 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
-
-  fonts:
-    - family: Inter
-      fonts:
-        - asset: assets/fonts/Inter-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/Inter-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Inter-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Inter-Bold.ttf
-          weight: 700

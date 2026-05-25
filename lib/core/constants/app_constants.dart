@@ -11,6 +11,7 @@ class AppConstants {
   static const int maxUploadSizeBytes = 2 * 1024 * 1024 * 1024; // 2GB
   static const int maxUploadSizeMb = 2048;
   static const int thumbnailMaxSizeBytes = 200 * 1024; // 200KB
+  static const int maxUploadBatchCount = 10;
 
   // Cache
   static const int maxCacheSizeMb = 500;

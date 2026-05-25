@@ -1,0 +1,17 @@
+<svg width="1344" height="2992" viewBox="0 0 1344 2992" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1344" height="2992" fill="#1C2229"/>
+<rect width="1344" height="2992" fill="url(#paint1_linear_14_57)"/>
+<!-- Teal glow gradient drawn on top so it is actually visible -->
+<rect width="1344" height="2992" fill="url(#paint0_linear_14_57)"/>
+<defs>
+<linearGradient id="paint0_linear_14_57" x1="1" y1="0" x2="0.145" y2="1" gradientUnits="objectBoundingBox">
+<stop offset="0" stop-color="#167491" stop-opacity="0"/>
+<stop offset="0.504808" stop-color="#167491"/>
+<stop offset="1" stop-color="#167491" stop-opacity="0"/>
+</linearGradient>
+<linearGradient id="paint1_linear_14_57" x1="0.5" y1="0" x2="0.5" y2="1" gradientUnits="objectBoundingBox">
+<stop offset="0" stop-color="#1C2229"/>
+<stop offset="1" stop-color="#242424" stop-opacity="0.5"/>
+</linearGradient>
+</defs>
+</svg>

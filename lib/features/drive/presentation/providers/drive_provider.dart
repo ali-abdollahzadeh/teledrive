@@ -1,8 +1,12 @@
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/entities/drive_file.dart';
 import '../../domain/entities/drive_folder.dart';
 import '../../domain/repositories/drive_repository.dart';
 import '../../data/repositories/drive_repository_impl.dart';
+import '../../../../core/constants/app_constants.dart';
+import '../../../../core/constants/app_text.dart';
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 
@@ -268,13 +272,58 @@ class DriveNotifier extends StateNotifier<DriveState> {
     return folder;
   }
 
+  Future<void> importTelegramChannel(String chatId, String title) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final imported = prefs.getStringList('imported_folders') ?? [];
+      final entry = '$chatId:$title';
+      if (!imported.any((e) => e.startsWith('$chatId:'))) {
+        imported.add(entry);
+        await prefs.setStringList('imported_folders', imported);
+      }
+
+      // Check if already exists in state to avoid duplicate UI entries
+      final exists = state.folders.any((f) => f.id == chatId);
+      if (!exists) {
+        final newFolder = DriveFolder(
+          id: chatId,
+          title: title,
+          telegramChannelId: chatId,
+          createdAt: DateTime.now(),
+          fileCount: 0,
+        );
+        state = state.copyWith(folders: [...state.folders, newFolder]);
+      }
+    } catch (e) {
+      state = state.copyWith(error: 'Failed to link channel: ${e.toString()}');
+    }
+  }
+
   Future<void> deleteFolder(DriveFolder folder) async {
     try {
+      // If it's a custom/imported folder, also remove from imported list in SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final imported = prefs.getStringList('imported_folders') ?? [];
+      final updatedImported = imported.where((e) => !e.startsWith('${folder.id}:')).toList();
+      if (imported.length != updatedImported.length) {
+        await prefs.setStringList('imported_folders', updatedImported);
+      }
+
       await _repository.deleteFolder(folder);
       final updated = state.folders.where((f) => f.id != folder.id).toList();
       state = state.copyWith(folders: updated);
     } catch (e) {
-      state = state.copyWith(error: e.toString());
+      // If native deletion fails but it was an imported folder, we still want to remove it locally from state and preferences!
+      final prefs = await SharedPreferences.getInstance();
+      final imported = prefs.getStringList('imported_folders') ?? [];
+      final updatedImported = imported.where((e) => !e.startsWith('${folder.id}:')).toList();
+      if (imported.length != updatedImported.length) {
+        await prefs.setStringList('imported_folders', updatedImported);
+        final updatedState = state.folders.where((f) => f.id != folder.id).toList();
+        state = state.copyWith(folders: updatedState);
+      } else {
+        state = state.copyWith(error: e.toString());
+      }
     }
   }
 }
@@ -331,24 +380,38 @@ class UploadNotifier extends StateNotifier<UploadState> {
 
   UploadNotifier(this._repository, this._ref) : super(const UploadState());
 
+  Future<void> _uploadFileInternal(String taskId, String localPath, String fileName, String folderId) async {
+    if (!localPath.startsWith('content://')) {
+      final file = File(localPath);
+      if (await file.exists()) {
+        final size = await file.length();
+        if (size > AppConstants.maxUploadSizeBytes) {
+          throw Exception(AppText.fileExceedsTelegramLimit);
+        }
+      }
+    }
+
+    await _repository.uploadFile(
+      localPath: localPath,
+      fileName: fileName,
+      folderId: folderId,
+      onProgress: (progress) {
+        _updateTask(taskId, progress: progress);
+      },
+    );
+  }
+
   Future<void> uploadFile({
     required String localPath,
     required String fileName,
     required String folderId,
   }) async {
-    final taskId = 'task_${DateTime.now().millisecondsSinceEpoch}';
+    final taskId = 'task_${DateTime.now().millisecondsSinceEpoch}_${fileName.hashCode}';
     final task = UploadTask(id: taskId, fileName: fileName, folderId: folderId);
     state = UploadState(tasks: [...state.tasks, task]);
 
     try {
-      await _repository.uploadFile(
-        localPath: localPath,
-        fileName: fileName,
-        folderId: folderId,
-        onProgress: (progress) {
-          _updateTask(taskId, progress: progress);
-        },
-      );
+      await _uploadFileInternal(taskId, localPath, fileName, folderId);
       _updateTask(taskId, progress: 1.0, isComplete: true);
 
       // Reload file list for the folder the file was uploaded to

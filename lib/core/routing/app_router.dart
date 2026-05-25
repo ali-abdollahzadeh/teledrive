@@ -6,6 +6,8 @@ import '../../features/auth/presentation/screens/login_credentials_screen.dart';
 import '../../features/auth/presentation/screens/code_verification_screen.dart';
 import '../../features/auth/presentation/screens/password_screen.dart';
 import '../../features/drive/presentation/screens/drive_home_screen.dart';
+import '../../features/drive/presentation/screens/share_to_drive_screen.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../../features/drive/presentation/screens/folder_screen.dart';
 import '../../features/drive/presentation/screens/file_details_screen.dart';
 import '../../features/preview/presentation/screens/image_preview_screen.dart';
@@ -36,12 +38,48 @@ class AppRoutes {
   static const String settings = '/settings';
   static const String privacyPolicy = '/settings/privacy-policy';
   static const String termsOfUse = '/settings/terms-of-use';
+  static const String shareToDrive = '/share-to-drive';
 }
 
+// ==========================================
+// 🚪 DEV BACK DOOR SETTINGS
+// ==========================================
+const bool _isDevMode = false; // <-- SET TO FALSE BEFORE PUBLISHING APP
+
+// Change this to the exact path of the page you want to design.
+// If the route has parameters (like :fileId), provide mock data here:
+// Example: '/file/mock_file_123' or AppRoutes.settings
+const String _devTargetRoute = AppRoutes.drive;
+// ==========================================
+
 final appRouterProvider = Provider<GoRouter>((ref) {
+  var isRestoringSession = false;
+
   return GoRouter(
-    initialLocation: AppRoutes.welcome,
+    // 1. Boot directly into the screen you are designing
+    initialLocation: _isDevMode ? _devTargetRoute : AppRoutes.welcome,
+
     redirect: (context, state) async {
+      // 2. SHORT-CIRCUIT ALL AUTH CHECKS IF IN DEV MODE
+      // Returning null tells GoRouter to just go to the requested page.
+      if (_isDevMode) return null;
+
+      final uriString = state.uri.toString();
+
+      // Prevent GoRouter from crashing when Android passes file/content URIs
+      // as deep links (e.g. when the user shares a file into the app).
+      //
+      // DO NOT call restoreSession() here — it calls NativeTelegramChannel.initialize()
+      // which creates a new TDLib client. If TDLib is already running (warm start /
+      // app resumed from background) this causes the "td.binlog already in use" error.
+      // On a cold start, the normal isOnAuth block below handles session restore.
+      // Here we only need to redirect to the right screen.
+      if (uriString.startsWith('content://') ||
+          uriString.startsWith('file://')) {
+        final isLoggedIn = await SecureStorageService.instance.isLoggedIn();
+        return isLoggedIn ? AppRoutes.drive : AppRoutes.welcome;
+      }
+
       final isLoggedIn = await SecureStorageService.instance.isLoggedIn();
       final isOnAuth = state.matchedLocation == AppRoutes.welcome ||
           state.matchedLocation == AppRoutes.login ||
@@ -49,9 +87,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           state.matchedLocation == AppRoutes.verifyPassword;
 
       if (isLoggedIn && isOnAuth) {
-        // Restore the TDLib session so the native client is live
-        final authRepo = ref.read(authRepositoryProvider);
-        await authRepo.restoreSession();
+        if (!isRestoringSession) {
+          isRestoringSession = true;
+          try {
+            final authRepo = ref.read(authRepositoryProvider);
+            await authRepo.restoreSession();
+          } finally {
+            isRestoringSession = false;
+          }
+        }
         return AppRoutes.drive;
       }
       return null;
@@ -81,9 +125,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const DriveHomeScreen(),
       ),
       GoRoute(
+        path: AppRoutes.shareToDrive,
+        builder: (context, state) {
+          final files = (state.extra as List<SharedMediaFile>?) ?? [];
+          return ShareToDriveScreen(sharedFiles: files);
+        },
+      ),
+      GoRoute(
         path: AppRoutes.folder,
         builder: (context, state) {
-          final folderId = state.pathParameters['folderId']!;
+          final folderId = state.pathParameters['folderId'] ?? 'dev_mock_id';
           final folderName = state.uri.queryParameters['name'] ?? 'Folder';
           return FolderScreen(folderId: folderId, folderName: folderName);
         },
@@ -91,35 +142,35 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.fileDetails,
         builder: (context, state) {
-          final fileId = state.pathParameters['fileId']!;
+          final fileId = state.pathParameters['fileId'] ?? 'dev_mock_id';
           return FileDetailsScreen(fileId: fileId);
         },
       ),
       GoRoute(
         path: AppRoutes.previewImage,
         builder: (context, state) {
-          final fileId = state.pathParameters['fileId']!;
+          final fileId = state.pathParameters['fileId'] ?? 'dev_mock_id';
           return ImagePreviewScreen(fileId: fileId);
         },
       ),
       GoRoute(
         path: AppRoutes.previewVideo,
         builder: (context, state) {
-          final fileId = state.pathParameters['fileId']!;
+          final fileId = state.pathParameters['fileId'] ?? 'dev_mock_id';
           return VideoPreviewScreen(fileId: fileId);
         },
       ),
       GoRoute(
         path: AppRoutes.previewAudio,
         builder: (context, state) {
-          final fileId = state.pathParameters['fileId']!;
+          final fileId = state.pathParameters['fileId'] ?? 'dev_mock_id';
           return AudioPreviewScreen(fileId: fileId);
         },
       ),
       GoRoute(
         path: AppRoutes.previewPdf,
         builder: (context, state) {
-          final fileId = state.pathParameters['fileId']!;
+          final fileId = state.pathParameters['fileId'] ?? 'dev_mock_id';
           return PdfPreviewScreen(fileId: fileId);
         },
       ),

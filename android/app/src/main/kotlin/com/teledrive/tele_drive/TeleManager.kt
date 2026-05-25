@@ -7,6 +7,12 @@ import android.os.Looper
 import android.util.Log
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
+import android.net.Uri
+import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Wraps the TDLib Java API (org.drinkless.tdlib) to manage Telegram authentication.
@@ -28,6 +34,7 @@ class TeleManager(private val context: Context) {
     private var apiId: Int = 0
     private var apiHash: String = ""
     private var isInitialized: Boolean = false
+    private val isClosing = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // Callbacks fired on main thread → TelegramPlugin → Flutter
@@ -36,25 +43,44 @@ class TeleManager(private val context: Context) {
 
     // ---------- Public API ----------
 
+    @Synchronized
     fun initialize(apiId: Int, apiHash: String) {
-        // Guard: if already initialized with same credentials, skip
-        if (isInitialized && this.apiId == apiId && this.apiHash == apiHash && client != null) {
+        // Guard: if already initialized with same credentials and client is alive, skip
+        if (isInitialized && this.apiId == apiId && this.apiHash == apiHash && client != null && !isClosing.get()) {
             Log.d(TAG, "TDLib already initialized, skipping re-init")
             return
         }
 
-        // If there's an existing client, close it first to release the file lock
+        // If a close is already in progress, wait for it to finish before proceeding
+        if (isClosing.get()) {
+            Log.d(TAG, "TDLib is currently closing, waiting before re-init")
+            var waited = 0
+            while (isClosing.get() && waited < 3000) {
+                Thread.sleep(100)
+                waited += 100
+            }
+        }
+
+        // If there's an existing client, close it first to release the td.binlog file lock
         if (client != null) {
             Log.d(TAG, "Closing existing TDLib client before re-init")
+            isClosing.set(true)
+            val closeLatch = CountDownLatch(1)
+            closeLatchRef = closeLatch
             try {
                 client?.send(TdApi.Close()) {}
             } catch (e: Exception) {
-                Log.w(TAG, "Error closing old client: ${e.message}")
+                Log.w(TAG, "Error sending Close to old client: ${e.message}")
+                isClosing.set(false)
+                closeLatchRef = null
             }
             client = null
             isInitialized = false
-            // Give TDLib a moment to release the lock
-            Thread.sleep(500)
+            // Wait up to 3 seconds for TDLib to confirm it is fully closed
+            val released = closeLatch.await(3, TimeUnit.SECONDS)
+            Log.d(TAG, "TDLib close latch released=$released")
+            isClosing.set(false)
+            closeLatchRef = null
         }
 
         this.apiId = apiId
@@ -66,6 +92,9 @@ class TeleManager(private val context: Context) {
         client = Client.create(::handleUpdate, null, null)
         isInitialized = true
     }
+
+    // Latch used to wait for TDLib AuthorizationStateClosed during re-init
+    private var closeLatchRef: CountDownLatch? = null
 
     fun sendPhoneNumber(phone: String) {
         client?.send(TdApi.SetAuthenticationPhoneNumber(phone, null), ::handleResult)
@@ -257,6 +286,43 @@ fun getMe(onResult: (Map<String, Any?>) -> Unit, onErr: (String) -> Unit) {
         }
     }
 
+    private fun resolveContentUriToFile(contentUriString: String): String {
+        try {
+            val uri = Uri.parse(contentUriString)
+            val contentResolver = context.contentResolver
+
+            // Try to get original filename
+            var fileName = "shared_file_${System.currentTimeMillis()}"
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1 && cursor.moveToFirst()) {
+                    val displayName = cursor.getString(nameIndex)
+                    if (!displayName.isNullOrBlank()) {
+                        fileName = displayName
+                    }
+                }
+            }
+
+            // Create cache file in context.cacheDir/shared_files
+            val cacheDir = File(context.cacheDir, "shared_files")
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs()
+            }
+            val targetFile = File(cacheDir, fileName)
+
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                FileOutputStream(targetFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+
+            return targetFile.absolutePath
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resolving content URI: $contentUriString", e)
+            return contentUriString // Fallback to original
+        }
+    }
+
     /**
      * Upload a file to a chat using SendMessage + InputMessageDocument.
      */
@@ -266,7 +332,22 @@ fun getMe(onResult: (Map<String, Any?>) -> Unit, onErr: (String) -> Unit) {
         onResult: (Map<String, Any>) -> Unit,
         onErr: (String) -> Unit
     ) {
-        val inputFile = TdApi.InputFileLocal(filePath)
+        var resolvedPath = filePath
+        if (resolvedPath.startsWith("file://")) {
+            resolvedPath = resolvedPath.substring(7)
+        }
+        if (resolvedPath.startsWith("content://")) {
+            resolvedPath = resolveContentUriToFile(resolvedPath)
+        }
+
+        // Native defensive check: if resolved file size is > 2.0 GB, return a clear error
+        val localFile = File(resolvedPath)
+        if (localFile.exists() && localFile.length() > 2L * 1024L * 1024L * 1024L) {
+            mainHandler.post { onErr("File size exceeds the 2.0 GB Telegram limit.") }
+            return
+        }
+
+        val inputFile = TdApi.InputFileLocal(resolvedPath)
         val content = TdApi.InputMessageDocument(inputFile, null, false, null)
         val sendMsg = TdApi.SendMessage().apply {
             this.chatId = chatId
@@ -433,9 +514,17 @@ fun getMe(onResult: (Map<String, Any?>) -> Unit, onErr: (String) -> Unit) {
             is TdApi.AuthorizationStateWaitPhoneNumber     -> notifyState("authorizationStateWaitPhoneNumber")
             is TdApi.AuthorizationStateWaitCode            -> notifyState("authorizationStateWaitCode")
             is TdApi.AuthorizationStateWaitPassword        -> notifyState("authorizationStateWaitPassword")
+            is TdApi.AuthorizationStateWaitRegistration    -> {
+                Log.d(TAG, "Auth state: WaitRegistration")
+                mainHandler.post { onError?.invoke("REGISTRATION_REQUIRED: An active Telegram account is required to proceed.") }
+            }
             is TdApi.AuthorizationStateReady               -> notifyState("authorizationStateReady")
             is TdApi.AuthorizationStateLoggingOut          -> notifyState("authorizationStateLoggingOut")
-            is TdApi.AuthorizationStateClosed              -> notifyState("authorizationStateClosed")
+            is TdApi.AuthorizationStateClosed              -> {
+                // Release the close latch so initialize() can proceed with creating a new client
+                closeLatchRef?.countDown()
+                notifyState("authorizationStateClosed")
+            }
             else -> Log.d(TAG, "Unhandled auth state: ${state.javaClass.simpleName}")
         }
     }

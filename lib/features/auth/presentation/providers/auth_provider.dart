@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../../../services/storage/secure_storage_service.dart';
+import '../../../../core/constants/app_text.dart';
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 
@@ -126,24 +127,32 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final msg = e.toString().replaceFirst('Exception: ', '');
 
     // Make TDLib errors user-friendly
-    if (msg.contains('PHONE_NUMBER_INVALID')) {
-      return 'Invalid phone number format.';
+    if (msg.contains(AppText.registrationRequired)) {
+      return AppText.registrationRequiredMessage;
+    }
+
+    if (msg.contains(AppText.phoneNumberInvalidKey)) {
+      return AppText.phoneNumberInvalidMessage;
     }
 
     if (msg.contains('PHONE_CODE_INVALID')) {
-      return 'The verification code is incorrect.';
+      return AppText.phoneCodeInvalidMessage;
     }
 
     if (msg.contains('PHONE_CODE_EXPIRED')) {
-      return 'The code has expired. Please try again.';
+      return AppText.phoneCodeExpiredMessage;
     }
 
     if (msg.contains('PASSWORD_HASH_INVALID')) {
-      return 'Wrong password. Please try again.';
+      return AppText.passwordHashInvalidMessage;
     }
 
-    if (msg.contains('timed out')) {
-      return 'Connection timed out. Check your internet.';
+    if (msg.contains('timed out') ||
+        msg.contains('TimeoutException') ||
+        msg.contains('Network is unreachable') ||
+        msg.contains('Connection refused') ||
+        msg.contains('Failed host lookup')) {
+      return AppText.connectionTimedOut;
     }
 
     return msg;
