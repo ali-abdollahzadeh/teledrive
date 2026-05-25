@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../core/constants/app_text.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -31,13 +30,13 @@ class FileTypeFilterChips extends StatelessWidget {
     };
 
     final icons = {
-      DriveFileType.image: 'assets/icons/gallery_filled.svg',
-      DriveFileType.video: 'assets/icons/video_filled.svg',
-      DriveFileType.audio: 'assets/icons/music.svg',
-      DriveFileType.pdf: 'assets/icons/file_filled.svg',
-      DriveFileType.document: 'assets/icons/edit.svg',
-      DriveFileType.archive: 'assets/icons/badgefolder.svg',
-      DriveFileType.other: 'assets/icons/ic_voicesharing.svg',
+      DriveFileType.image: Icons.image_rounded,
+      DriveFileType.video: Icons.movie_rounded,
+      DriveFileType.audio: Icons.audiotrack_rounded,
+      DriveFileType.pdf: Icons.picture_as_pdf_rounded,
+      DriveFileType.document: Icons.description_rounded,
+      DriveFileType.archive: Icons.folder_zip_rounded,
+      DriveFileType.other: Icons.insert_drive_file_rounded,
     };
 
     return SingleChildScrollView(
@@ -60,16 +59,14 @@ class FileTypeFilterChips extends StatelessWidget {
                   ),
                   alignment: Alignment.center,
                   child: isSelected
-                      ? const Icon(
-                          Icons.check,
-                          size: 14,
-                          color: AppColors.primary,
-                        )
-                      : SvgPicture.asset(
-                          icons[type] ?? 'assets/icons/d.svg',
-                          width: 14,
-                          height: 14,
-                        ),
+                      ? const Icon(Icons.check_rounded,
+                      size: 14, color: AppColors.primary)
+                      : Icon(
+                    icons[type] ??
+                        Icons.insert_drive_file_rounded,
+                    size: 14,
+                    color: AppColors.primary,
+                  ),
                 ),
                 label: Text(
                   labels[type] ?? AppText.filterOther,
