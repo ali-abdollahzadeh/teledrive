@@ -9,6 +9,9 @@ TeleDrive is a modern, high-performance Flutter application that transforms your
 
 
 [<img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="80">](https://play.google.com/store/apps/details?id=dev.aliabdollahzadeh.teledrive)
+
+
+[![Download APK](https://img.shields.io/badge/Download-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/ali-abdollahzadeh/teledrive/releases/latest)
 </div>
 <div align="center">
 
