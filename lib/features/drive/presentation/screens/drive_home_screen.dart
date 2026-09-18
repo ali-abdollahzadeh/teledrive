@@ -23,6 +23,10 @@ import '../widgets/file_list_item.dart';
 import '../widgets/storage_selector.dart';
 import '../widgets/upload_progress_card.dart';
 import '../widgets/add_folder_dialog.dart';
+import '../widgets/upload_options_sheet.dart';
+import '../widgets/compression_progress_dialog.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:tele_drive/services/compression/folder_compression_service.dart';
 
 class DriveHomeScreen extends ConsumerStatefulWidget {
   const DriveHomeScreen({super.key});
@@ -184,6 +188,149 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
     }
 
     _showUploadDestinationSheet(result.files, driveState);
+  }
+
+  void _showUploadOptions() {
+    UploadOptionsSheet.show(
+      context: context,
+      onUploadFiles: _pickAndUpload,
+      onUploadFolder: _pickAndUploadFolder,
+    );
+  }
+
+  Future<bool> _ensureStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+
+    final status = await Permission.manageExternalStorage.status;
+    if (status.isGranted) return true;
+
+    final shouldRequest = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Storage Permission Needed'),
+        content: const Text(
+          'To compress and upload folders from your device, TeleDrive needs "All files access" permission.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(AppText.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRequest != true) return false;
+
+    final result = await Permission.manageExternalStorage.request();
+    if (!result.isGranted) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'All files access is required to read and compress folders.',
+          ),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () => openAppSettings(),
+          ),
+        ),
+      );
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _pickAndUploadFolder() async {
+    try {
+      final hasPermission = await _ensureStoragePermission();
+      if (!hasPermission) return;
+
+      final selectedDirectory = await FilePicker.platform.getDirectoryPath();
+      if (selectedDirectory == null || selectedDirectory.isEmpty) return;
+      if (!mounted) return;
+
+      final folderName = p.basename(selectedDirectory);
+
+      // Show compression progress dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => CompressionProgressDialog(folderName: folderName),
+      );
+
+      CompressedFolderResult result;
+      try {
+        result = await FolderCompressionService.instance.compressDirectory(
+          directoryPath: selectedDirectory,
+        );
+      } finally {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      }
+
+      if (!mounted) return;
+
+      // Check 2.0 GB size limit
+      if (result.compressedSizeBytes > AppConstants.maxUploadSizeBytes) {
+        _showFilesTooLargeDialog([result.zipFileName]);
+        await FolderCompressionService.instance.deleteTempZip(result.zipPath);
+        return;
+      }
+
+      final driveState = ref.read(driveProvider);
+      final currentFolderId = driveState.currentFolderId;
+
+      final platformFile = PlatformFile(
+        name: result.zipFileName,
+        path: result.zipPath,
+        size: result.compressedSizeBytes,
+      );
+
+      if (currentFolderId != 'saved_messages') {
+        ref.read(uploadProvider.notifier).uploadFile(
+              localPath: result.zipPath,
+              fileName: result.zipFileName,
+              folderId: currentFolderId,
+            );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '${AppText.uploadingN} 1 ${AppText.uploadingFilesSuffix}',
+            ),
+          ),
+        );
+        return;
+      }
+
+      _showUploadDestinationSheet([platformFile], driveState);
+    } on StoragePermissionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () => openAppSettings(),
+          ),
+        ),
+      );
+    } on EmptyFolderException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppText.folderEmpty)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to compress folder: $e')),
+      );
+    }
   }
 
   // ==========================================
@@ -471,7 +618,7 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
                       title: AppText.noFilesYet,
                       subtitle: AppText.uploadFirstFile,
                       actionLabel: AppText.upload,
-                      onAction: _pickAndUpload,
+                      onAction: _showUploadOptions,
                     ),
                   )
                 else if (driveState.viewMode == ViewMode.grid)
@@ -487,7 +634,7 @@ class _DriveHomeScreenState extends ConsumerState<DriveHomeScreen> {
       floatingActionButton: driveState.isSelectionMode
           ? null
           : FloatingActionButton.extended(
-              onPressed: _pickAndUpload,
+              onPressed: _showUploadOptions,
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
               icon: const Icon(Icons.upload_rounded),

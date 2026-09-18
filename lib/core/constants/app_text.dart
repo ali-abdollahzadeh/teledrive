@@ -110,6 +110,16 @@ class AppText {
   // ---------------------------------------------------------------------------
   static const appTitle = 'TeleDrive';
   static const upload = 'Upload';
+  static const uploadFiles = 'Upload Files';
+  static const uploadFilesSubtitle = 'Select individual files to upload';
+  static const uploadFolder = 'Upload Folder (.zip)';
+  static const uploadFolderSubtitle = 'Automatically compress a folder into .zip';
+  static const compressingFolder = 'Compressing folder...';
+  static const compressingFolderSubtitle = 'Preparing archive for upload';
+  static const folderEmpty = 'The selected folder is empty.';
+  static const folderEmptyDetails = 'No files were found in the selected folder.';
+  static const folderTooLarge = 'The compressed folder exceeds Telegram\'s 2.0 GB limit.';
+  static const cancelCompression = 'Cancel';
   static const uploadingFiles = 'Uploading'; // append " N file(s)..."
   static const uploadingFilesSuffix = 'file(s)...';
 

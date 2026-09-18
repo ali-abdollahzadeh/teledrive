@@ -1,14 +1,24 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
-import 'dart:io';
+
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/app_text.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/common_widgets.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:tele_drive/services/compression/folder_compression_service.dart';
 import '../../domain/entities/drive_file.dart';
 import '../providers/drive_provider.dart';
+import '../widgets/compression_progress_dialog.dart';
 import '../widgets/file_grid_item.dart';
 import '../widgets/file_list_item.dart';
+import '../widgets/upload_options_sheet.dart';
 
 class FolderScreen extends ConsumerStatefulWidget {
   final String folderId;
@@ -53,6 +63,8 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
                   icon: Icons.folder_open_rounded,
                   title: AppText.folderIsEmpty,
                   subtitle: '${AppText.uploadFilesToFolder}${widget.folderName}',
+                  actionLabel: AppText.upload,
+                  onAction: _showUploadOptions,
                 )
               : driveState.viewMode == ViewMode.grid
                   ? Padding(
@@ -90,6 +102,205 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
                         onShare: () => _shareFile(files[i]),
                       ),
                     ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showUploadOptions,
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.upload_rounded),
+        label: const Text(AppText.upload),
+        elevation: 4,
+      ),
+    );
+  }
+
+  void _showUploadOptions() {
+    UploadOptionsSheet.show(
+      context: context,
+      onUploadFiles: _pickAndUploadFiles,
+      onUploadFolder: _pickAndUploadFolder,
+    );
+  }
+
+  Future<void> _pickAndUploadFiles() async {
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (result == null || result.files.isEmpty) return;
+    if (!mounted) return;
+
+    if (result.files.length > AppConstants.maxUploadBatchCount) {
+      _showErrorDialog(
+        AppText.tooManyFilesSelectedTitle,
+        AppText.tooManyFilesSelectedContent,
+      );
+      return;
+    }
+
+    final tooLargeFiles = result.files
+        .where((f) => f.size > AppConstants.maxUploadSizeBytes)
+        .toList();
+    if (tooLargeFiles.isNotEmpty) {
+      final names = tooLargeFiles.map((f) => f.name).join(', ');
+      _showErrorDialog(
+        AppText.fileSizeExceededTitle,
+        AppText.fileSizeExceededMultiple(names),
+      );
+      return;
+    }
+
+    for (final file in result.files) {
+      if (file.path != null) {
+        ref.read(uploadProvider.notifier).uploadFile(
+              localPath: file.path!,
+              fileName: file.name,
+              folderId: widget.folderId,
+            );
+      }
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${AppText.uploadingN} ${result.files.length} ${AppText.uploadingFilesSuffix}',
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _ensureStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+
+    final status = await Permission.manageExternalStorage.status;
+    if (status.isGranted) return true;
+
+    final shouldRequest = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Storage Permission Needed'),
+        content: const Text(
+          'To compress and upload folders from your device, TeleDrive needs "All files access" permission.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(AppText.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRequest != true) return false;
+
+    final result = await Permission.manageExternalStorage.request();
+    if (!result.isGranted) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'All files access is required to read and compress folders.',
+          ),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () => openAppSettings(),
+          ),
+        ),
+      );
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _pickAndUploadFolder() async {
+    try {
+      final hasPermission = await _ensureStoragePermission();
+      if (!hasPermission) return;
+
+      final selectedDirectory = await FilePicker.platform.getDirectoryPath();
+      if (selectedDirectory == null || selectedDirectory.isEmpty) return;
+      if (!mounted) return;
+
+      final folderName = p.basename(selectedDirectory);
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => CompressionProgressDialog(folderName: folderName),
+      );
+
+      CompressedFolderResult result;
+      try {
+        result = await FolderCompressionService.instance.compressDirectory(
+          directoryPath: selectedDirectory,
+        );
+      } finally {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      }
+
+      if (!mounted) return;
+
+      if (result.compressedSizeBytes > AppConstants.maxUploadSizeBytes) {
+        _showErrorDialog(
+          AppText.fileSizeExceededTitle,
+          AppText.fileSizeExceededSingle(result.zipFileName),
+        );
+        await FolderCompressionService.instance.deleteTempZip(result.zipPath);
+        return;
+      }
+
+      ref.read(uploadProvider.notifier).uploadFile(
+            localPath: result.zipPath,
+            fileName: result.zipFileName,
+            folderId: widget.folderId,
+          );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '${AppText.uploadingN} 1 ${AppText.uploadingFilesSuffix}',
+          ),
+        ),
+      );
+    } on StoragePermissionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () => openAppSettings(),
+          ),
+        ),
+      );
+    } on EmptyFolderException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppText.folderEmpty)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to compress folder: $e')),
+      );
+    }
+  }
+
+  void _showErrorDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(AppText.ok),
+          ),
+        ],
+      ),
     );
   }
 
